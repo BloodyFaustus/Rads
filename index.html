@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  RAD COUNTER
+  Phone first life and counter tracker for MTG Commander, built around rad counters.
+  Single file app: all CSS and JS inline. Only external resource: Google Fonts.
+  Sections in the script: 1 constants, 2 state, 3 persistence, 4 game logic,
+  5 effects, 6 layouts, 7 rendering, 8 controls, 9 dialogs, 10 PWA, 11 boot.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#030a05" id="metaTheme">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RAD COUNTER">
+<meta name="application-name" content="RAD COUNTER">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="Life, rad counter and commander damage tracker for Magic: The Gathering Commander.">
+<title>RAD COUNTER</title>
+<link rel="manifest" id="manifestLink">
+<link rel="icon" id="favLink">
+<link rel="apple-touch-icon" id="appleIcon">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<style>
+/* =====================================================================
+   THEME TOKENS
+   ===================================================================== */
+:root{
+  --bg:#030a05; --panel:#06120a; --fg:#3CFF6E; --dim:#2fd05e; --faint:#17592b; --hi:#c4ffd3;
+  --warn:#FFB641; --bad:#FF5A4E;
+  --font-ui:'VT323', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-num:'Share Tech Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --tg:none; --scan:0; --vig:0;
+}
+body[data-theme="amber"]{ --bg:#0c0703; --panel:#150d05; --fg:#FFB641; --dim:#e9a23c; --faint:#5e3d12; --hi:#ffe2ad; }
+body[data-theme="vault"]{ --bg:#040f27; --panel:#08193b; --fg:#FFD23F; --dim:#a8c8f7; --faint:#22437f; --hi:#fff1b8; }
+body[data-theme="red"]  { --bg:#0d0303; --panel:#170606; --fg:#FF5A4E; --dim:#ff9289; --faint:#5c1714; --hi:#ffcbc5; }
+
+/* CRT intensity: bloom (text glow), scanline and vignette strength */
+body.crt-low { --tg:0 0 4px color-mix(in srgb, currentColor 65%, transparent); --scan:.16; --vig:.42; }
+body.crt-high{ --tg:0 0 2px currentColor, 0 0 12px color-mix(in srgb, currentColor 55%, transparent); --scan:.3; --vig:.68; }
+
+/* =====================================================================
+   BASE
+   ===================================================================== */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--fg);overflow:hidden;overscroll-behavior:none}
+body{
+  position:fixed;inset:0;font-family:var(--font-ui);font-size:20px;line-height:1.15;
+  text-transform:uppercase;letter-spacing:.02em;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  -webkit-text-size-adjust:100%;text-size-adjust:100%;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation;text-transform:inherit;letter-spacing:inherit}
+button:focus-visible,input:focus-visible{outline:2px solid var(--hi);outline-offset:2px}
+input{font:inherit;color:inherit;text-transform:uppercase;-webkit-user-select:text;user-select:text}
+svg.ico{width:1em;height:1em;fill:currentColor;flex:none}
+
+/* =====================================================================
+   APP SHELL AND TABLE
+   ===================================================================== */
+#app{
+  position:fixed;left:0;top:0;width:100vw;height:100vh;height:100dvh;display:flex;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background:radial-gradient(ellipse at center, color-mix(in srgb, var(--fg) 6%, var(--bg)) 0%, var(--bg) 75%);
+}
+#table{position:relative;flex:1;min-height:0;display:grid;gap:4px;padding:4px;touch-action:none}
+.cell{position:relative;min-width:0;min-height:0}
+
+/* =====================================================================
+   PLAYER PANEL (a terminal window, sized in JS, rotated to face its player)
+   ===================================================================== */
+.panel{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(var(--rot,0deg));
+  container-type:size;color:var(--pc);--rc:var(--pc);
+  background:color-mix(in srgb, var(--pc) 5%, var(--panel));
+  border-radius:8px;overflow:hidden;
+}
+.panel .frame{
+  position:absolute;inset:0;border-radius:8px;pointer-events:none;z-index:5;
+  border:1px solid color-mix(in srgb, var(--pc) 55%, transparent);
+  box-shadow:inset 0 0 18px color-mix(in srgb, var(--pc) 10%, transparent);
+}
+.frame i{position:absolute;width:10px;height:10px;border-color:var(--pc);border-style:solid;opacity:.9}
+.frame i:nth-child(1){left:3px;top:3px;border-width:2px 0 0 2px}
+.frame i:nth-child(2){right:3px;top:3px;border-width:2px 2px 0 0}
+.frame i:nth-child(3){left:3px;bottom:3px;border-width:0 0 2px 2px}
+.frame i:nth-child(4){right:3px;bottom:3px;border-width:0 2px 2px 0}
+.panel.active .frame{border:2px solid var(--pc);box-shadow:0 0 0 1px var(--pc), inset 0 0 26px color-mix(in srgb, var(--pc) 28%, transparent)}
+
+/* life tap zones: left half minus, right half plus */
+.zone{position:absolute;top:0;bottom:0;width:50%;z-index:1;touch-action:none}
+.zone.minus{left:0}.zone.plus{right:0}
+.zone.press{background:color-mix(in srgb, var(--pc) 9%, transparent)}
+
+.pbody{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;gap:2px;padding:3px 6px 5px;pointer-events:none}
+.pbody button{pointer-events:auto}
+.phead{flex:none;display:flex;align-items:center;gap:2px;height:clamp(34px,15cqh,44px)}
+.pname{flex:1;min-width:0;height:100%;text-align:left;padding:0 6px;font-size:clamp(17px,8.5cqh,28px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:var(--tg)}
+.pname::before{content:"> ";opacity:.7}
+.marks{display:flex;gap:3px;align-items:center;font-size:clamp(16px,8cqh,26px)}
+.marks svg{filter:drop-shadow(0 0 3px currentColor)}
+.turnflag{display:none;font-size:clamp(13px,6cqh,20px);border:1px solid currentColor;padding:0 4px;border-radius:3px;animation:blink 1.2s steps(2) infinite}
+.panel.active .turnflag{display:inline-block}
+.pmenu{flex:none;width:44px;height:100%;display:grid;place-items:center;font-size:clamp(18px,9cqh,28px)}
+
+.lifebox{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+.lifecol{display:flex;flex-direction:column;align-items:center}
+.lbl{font-size:clamp(13px,5cqh,19px);opacity:.75;letter-spacing:.12em}
+.life{font-family:var(--font-num);font-size:clamp(30px,min(31cqh,34cqw),200px);line-height:.92;text-shadow:var(--tg);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.life.tick{animation:tick .2s steps(3)}
+.hint{position:absolute;top:50%;transform:translateY(-50%);font-family:var(--font-num);font-size:clamp(18px,10cqh,40px);opacity:.38}
+.hint.l{left:3%}.hint.r{right:3%}
+.delta{position:absolute;top:0;right:9%;font-family:var(--font-num);font-size:clamp(18px,9cqh,34px);opacity:0;transition:opacity .35s;text-shadow:0 0 6px currentColor}
+.delta.on{opacity:1;transition:none}
+.delta.neg{color:#ff7a6e}.delta.pos{color:#8dffad}
+
+/* rad block */
+.radwrap{flex:none;display:flex;flex-direction:column;align-items:center;gap:3px}
+.radlbl{font-size:clamp(13px,5cqh,19px);opacity:.75;letter-spacing:.12em;color:var(--rc)}
+.radrow{display:flex;align-items:center;justify-content:center;gap:5px}
+.rbtn{width:44px;height:clamp(44px,17cqh,58px);border:1px solid color-mix(in srgb, var(--rc) 55%, transparent);border-radius:6px;font-family:var(--font-num);font-size:clamp(22px,10cqh,32px);display:grid;place-items:center;color:var(--rc)}
+.rbtn:active,.radbtn:active{background:color-mix(in srgb, var(--rc) 22%, transparent)}
+.radbtn{min-width:74px;height:clamp(44px,17cqh,58px);padding:0 9px;display:flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid var(--rc);border-radius:6px;color:var(--rc);font-family:var(--font-num);font-size:clamp(22px,11cqh,40px);text-shadow:var(--tg)}
+.radbtn svg{width:.9em;height:.9em}
+.panel[data-lv="0"] .radbtn{border-color:color-mix(in srgb, var(--rc) 45%, transparent)}
+.panel[data-lv="3"] .radbtn,.panel[data-lv="4"] .radbtn{text-shadow:0 0 8px var(--rc);box-shadow:0 0 8px color-mix(in srgb, var(--rc) 50%, transparent)}
+.radbtn.remind{animation:pulse var(--pspd,1.8s) ease-in-out infinite}
+.panel[data-lv="2"]{--pspd:1.3s}.panel[data-lv="3"]{--pspd:.85s}.panel[data-lv="4"]{--pspd:.5s}
+.radbtn.remind svg{animation:spin 6s linear infinite}
+.meter{display:flex;gap:2px;width:min(82%,240px);height:5px}
+.meter i{flex:1;background:color-mix(in srgb, var(--rc) 14%, transparent)}
+.meter i.on{background:var(--rc);box-shadow:0 0 4px var(--rc)}
+
+.badges{flex:none;display:flex;flex-wrap:wrap;justify-content:center;gap:4px;font-size:clamp(14px,6cqh,20px)}
+.badges:empty{display:none}
+.bdg{border:1px solid currentColor;border-radius:3px;padding:0 4px;line-height:1.15;background:color-mix(in srgb, var(--panel) 80%, transparent)}
+
+/* elimination overlay */
+.elim{position:absolute;inset:0;z-index:3;display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none;color:var(--bad);text-align:center;padding:6px}
+.elim::before{content:"";position:absolute;inset:0;opacity:.22;animation:static .35s steps(4) infinite;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -.3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")}
+.etitle{position:relative;font-size:clamp(18px,min(14cqh,12cqw),58px);letter-spacing:.12em;text-shadow:0 0 10px var(--bad);background:color-mix(in srgb, var(--bg) 75%, transparent);padding:0 8px}
+.ereason{position:relative;font-size:clamp(14px,6.5cqh,24px);background:color-mix(in srgb, var(--bg) 75%, transparent);padding:0 6px}
+.panel.dead .elim{display:flex}
+.panel.dead .pbody{opacity:.3;filter:grayscale(.75)}
+.panel.dead .frame{border-color:color-mix(in srgb, var(--bad) 45%, transparent)}
+
+/* rad check banner at start of a player's turn */
+.radcheck{position:absolute;left:8%;right:8%;top:50%;transform:translateY(-50%);z-index:4;display:none;flex-direction:column;align-items:center;
+  padding:6px;border:2px solid #FFB641;border-radius:6px;background:var(--bg);color:#FFB641;font-size:clamp(18px,10cqh,36px);text-shadow:0 0 8px #FFB641;min-height:44px}
+.radcheck small{font-size:.6em;opacity:.85}
+.panel.rc .radcheck{display:flex;animation:blink .45s steps(2) 6}
+
+/* damage and heal flashes */
+.panel::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;z-index:6}
+.panel.dmg::after{background:#ff2a1a;animation:dmg .38s linear}
+.panel.heal::after{background:#3cff6e;animation:heal .5s ease-out}
+
+/* container queries: adapt panel contents to its own size */
+@container (max-height:215px){ .lbl,.radlbl{display:none} }
+@container (max-height:130px){ .meter{display:none} }
+@container (max-width:200px){
+  .pbody{padding:3px 3px 4px}
+  .radrow{gap:2px}
+  .radbtn{min-width:48px;padding:0 4px;gap:2px;font-size:clamp(20px,10cqh,28px)}
+  .hint{display:none}
+}
+@container (max-width:138px){
+  .radrow{flex-wrap:wrap}
+  .radbtn{order:-1;flex-basis:100%}
+}
+@container (min-aspect-ratio:17/10){
+  .pbody{display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:auto 1fr auto;
+    grid-template-areas:"h h" "l r" "l b";column-gap:6px}
+  .phead{grid-area:h}.lifebox{grid-area:l}.radwrap{grid-area:r;align-self:center}.badges{grid-area:b;align-self:end}
+  .life{font-size:clamp(30px,min(50cqh,25cqw),200px)}
+  .hint.r{right:auto;left:auto;display:none}
+}
+
+/* =====================================================================
+   HUB (center controls)
+   ===================================================================== */
+#hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;display:flex;align-items:center;gap:1px;padding:2px;
+  background:var(--bg);border:1px solid var(--fg);border-radius:26px;color:var(--fg);
+  box-shadow:0 0 0 3px var(--bg), 0 0 14px color-mix(in srgb, var(--fg) 45%, transparent)}
+#hub button{min-width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:3px;font-size:22px;padding:0 6px}
+#hub button:active{background:color-mix(in srgb, var(--fg) 25%, transparent)}
+#hub button:disabled{opacity:.35}
+#hub .hnext{font-family:var(--font-num);font-size:16px}
+#hub .htime{font-family:var(--font-num);font-size:14px;padding:0 6px;min-width:0;opacity:.9}
+#hub [hidden]{display:none}
+
+/* =====================================================================
+   CRT OVERLAY
+   ===================================================================== */
+#crt{position:fixed;inset:0;pointer-events:none;z-index:300}
+#crt::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,var(--scan)) 2px 3px)}
+#crt::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,var(--vig)) 100%)}
+body.crt-off #crt{display:none}
+body.crt-low #app{animation:flicker 9s infinite}
+body.crt-high #app{animation:flicker 5s infinite}
+
+/* =====================================================================
+   SHEETS (bottom terminal panels, rotated toward the player who opened them)
+   ===================================================================== */
+.layer{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0);transition:background .22s}
+.layer.open{background:rgba(0,0,0,.66)}
+.mframe{position:absolute;left:50%;top:50%;width:100vw;height:100vh;height:100dvh;transform:translate(-50%,-50%) rotate(var(--rot,0deg))}
+.mframe.side{width:100vh;width:100dvh;height:100vw}
+.sheet{position:absolute;left:50%;bottom:0;width:min(100%,560px);max-height:92%;display:flex;flex-direction:column;
+  background:var(--panel);color:var(--fg);border:1px solid var(--fg);border-bottom:0;border-radius:12px 12px 0 0;
+  transform:translate(-50%,104%);transition:transform .26s cubic-bezier(.2,.8,.2,1);
+  box-shadow:0 -6px 30px color-mix(in srgb, var(--fg) 22%, transparent)}
+.mframe.r0 .sheet{padding-bottom:env(safe-area-inset-bottom)}
+.layer.open .sheet{transform:translate(-50%,0)}
+.shead{flex:none;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-bottom:1px dashed var(--faint)}
+.shead h2{flex:1;min-width:0;font-weight:normal;font-size:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:var(--tg)}
+.shead h2.typing::after{content:"\2588";animation:blink .5s steps(2) infinite;margin-left:2px}
+.sclose{width:44px;height:44px;display:grid;place-items:center;font-size:24px;border-radius:6px}
+.sbody{flex:1;min-height:0;overflow:auto;padding:8px 14px 18px;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.sec{margin-top:14px}
+.sec>h3{font-weight:normal;font-size:19px;color:var(--dim);letter-spacing:.1em;margin-bottom:6px}
+.cap{font-size:18px;color:var(--dim);text-align:center;letter-spacing:.08em}
+.note{font-size:17px;color:var(--dim);margin-top:4px;text-transform:none}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.row.end{justify-content:flex-end}.row.center{justify-content:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.btn{min-height:44px;min-width:44px;padding:0 12px;border:1px solid var(--fg);border-radius:6px;font-size:22px;color:var(--fg);
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent}
+.btn:active{background:color-mix(in srgb, var(--fg) 26%, transparent)}
+.btn.pri{background:var(--fg);color:var(--bg)}
+.btn.on{background:color-mix(in srgb, currentColor 22%, transparent);box-shadow:0 0 8px color-mix(in srgb, currentColor 50%, transparent)}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.btn:disabled{opacity:.35}
+.btn.wide{width:100%}
+.btn.big{min-width:64px;min-height:64px;font-size:36px;font-family:var(--font-num)}
+.step{display:flex;align-items:center;gap:6px;padding:3px 0}
+.step .nm{flex:1;min-width:0;font-size:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .val{min-width:3.2ch;text-align:center;font-family:var(--font-num);font-size:28px;text-shadow:var(--tg)}
+.step .btn{font-family:var(--font-num);padding:0 8px}
+.inp{width:100%;height:46px;border:1px solid var(--faint);border-radius:6px;background:var(--bg);padding:0 10px;font-size:20px;color:var(--fg)}
+.inp:focus{border-color:var(--fg);outline:none}
+.sw{width:44px;height:44px;border-radius:6px;border:3px solid transparent}
+.sw.on{border-color:var(--hi);box-shadow:0 0 10px currentColor}
+.src{border-left:4px solid var(--sc);padding-left:8px;margin:8px 0}
+.src .srchead{display:flex;align-items:center;gap:6px}
+.src .srchead span{flex:1;color:var(--sc);font-size:21px}
+.statusline{font-size:21px;padding:4px 0}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg .btn{flex:1;padding:0 6px}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--faint)}
+.setrow>span{font-size:20px}
+.chip{font-size:19px;padding:0 10px}
+
+/* rad trigger dialog */
+.mill{font-family:var(--font-num);text-align:center;font-size:clamp(40px,11vmin,76px);line-height:1;margin:4px 0 8px;color:#FFB641;text-shadow:0 0 12px #FFB641}
+.nrow{display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0}
+.nval{font-family:var(--font-num);font-size:64px;min-width:2.2ch;text-align:center;text-shadow:var(--tg)}
+.quick{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:160px;overflow:auto;margin:6px 0}
+.quick .btn{min-width:48px;font-family:var(--font-num)}
+.preview{border:1px dashed var(--fg);padding:8px 10px;margin:10px 0;font-size:22px;text-align:center;text-shadow:var(--tg)}
+
+/* dice */
+.dres{font-family:var(--font-num);text-align:center;font-size:68px;line-height:1.1;min-height:84px;text-shadow:var(--tg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dlog{font-size:18px;color:var(--dim);margin-top:8px;text-align:center}
+
+/* history */
+.hist{display:flex;flex-direction:column}
+.hrow{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:6px 0;border-bottom:1px dashed var(--faint);font-size:18px}
+.hrow .ht{color:var(--dim);font-family:var(--font-num);font-size:14px;padding-top:3px}
+.hrow .hw b{font-weight:normal}
+.hrow .hc{grid-column:2;color:var(--dim);font-family:var(--font-num);font-size:15px;text-transform:none}
+
+/* help */
+.help p{font-size:20px;margin:6px 0;text-transform:none}
+.help b{font-weight:normal;color:var(--hi)}
+.help .demo{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--fg);border-radius:6px;margin:6px 0;text-align:center}
+.help .demo div{padding:10px 4px;font-size:20px}
+.help .demo div+div{border-left:1px dashed var(--fg)}
+
+/* =====================================================================
+   ANIMATIONS
+   ===================================================================== */
+@keyframes blink{50%{opacity:.25}}
+@keyframes tick{0%{opacity:.35;transform:translateY(-3%)}50%{opacity:.8}100%{opacity:1;transform:none}}
+@keyframes dmg{0%{opacity:.34}25%{opacity:.08}45%{opacity:.24}100%{opacity:0}}
+@keyframes heal{0%{opacity:.26}100%{opacity:0}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 transparent}50%{box-shadow:0 0 14px var(--rc), inset 0 0 10px color-mix(in srgb, var(--rc) 45%, transparent)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes static{0%{background-position:0 0}25%{background-position:-40px 30px}50%{background-position:30px -60px}75%{background-position:-70px -20px}}
+@keyframes flicker{0%,100%{opacity:1}47%{opacity:1}48%{opacity:.95}49%{opacity:1}73%{opacity:.975}74%{opacity:1}}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body data-theme="green" class="crt-low">
+<!-- Shared SVG symbols. The trefoil path is generated in JS (section 10) so icon and app share one shape. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-tre" viewBox="-50 -50 100 100"><path id="trePath" fill-rule="evenodd"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3 17 4.6 7l4.9 4.6L12 4l2.5 7.6L19.4 7 21 17Zm0 2h18v2H3Z"/></symbol>
+  <symbol id="i-init" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 22V10a8 8 0 0 1 16 0v12Zm5 0v-6a3 3 0 0 1 6 0v6ZM11 7h2v4h-2Z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 5h18v2.4H3Zm0 5.8h18v2.4H3Zm0 5.8h18V19H3Z"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><path d="M10 4h4v4h-4Zm0 6h4v4h-4Zm0 6h4v4h-4Z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 4 3 9.5 9 15v-4h6a4 4 0 0 1 0 8h-3v2.5h3a6.5 6.5 0 0 0 0-13H9Z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 4l11 8-11 8Zm12 0h2.4v16H18Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m5.7 4 6.3 6.3L18.3 4 20 5.7 13.7 12l6.3 6.3-1.7 1.7-6.3-6.3L5.7 20 4 18.3l6.3-6.3L4 5.7Z"/></symbol>
+</svg>
+
+<div id="app">
+  <main id="table" aria-label="Game table"></main>
+</div>
+<div id="crt" aria-hidden="true"></div>
+<script>
+'use strict';
+/* =====================================================================
+   1. CONSTANTS
+   ===================================================================== */
+const STORE_KEY = 'radcounter.v1';
+const HISTORY_MAX = 250;          // undo depth kept in storage
+const COALESCE_MS = 2000;         // rapid taps within this window merge into one history entry
+const MAX_PLAYERS = 8;
+const RM = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+
+const PCOLORS = [
+  { n: 'GREEN',   c: '#3CFF6E' }, { n: 'AMBER',  c: '#FFB641' },
+  { n: 'CYAN',    c: '#3CE8FF' }, { n: 'MAGENTA', c: '#FF6CF2' },
+  { n: 'RED',     c: '#FF6060' }, { n: 'WHITE',  c: '#E6F2E6' },
+  { n: 'YELLOW',  c: '#F2EC4B' }, { n: 'BLUE',   c: '#78AEFF' }
+];
+const THEMES = {
+  green: { n: 'PHOSPHOR', meta: '#030a05', sw: '#3CFF6E' },
+  amber: { n: 'AMBER',    meta: '#0c0703', sw: '#FFB641' },
+  vault: { n: 'VAULT',    meta: '#040f27', sw: '#FFD23F' },
+  red:   { n: 'RED ALERT', meta: '#0d0303', sw: '#FF5A4E' }
+};
+/* rad readout color by level: 0 none, 1 green, 2 yellow, 3 orange, 4 red */
+const RAD_COLORS = [null, '#3CFF6E', '#F2EC4B', '#FF9B3D', '#FF4A3D'];
+const radLevel = r => r <= 0 ? 0 : r < 5 ? 1 : r < 10 ? 2 : r < 15 ? 3 : 4;
+const METER_SEGS = 20;
+
+const DEF_SETTINGS = {
+  players: 4, startLife: 40, flat: false, cmdLife: true, radGlow: true,
+  sound: false, haptic: true, crt: 'low', theme: 'green', timer: false, helpSeen: false
+};
+
+/* =====================================================================
+   2. STATE
+   S.settings  : preferences (not part of undo)
+   S.game      : everything undo can restore (players, markers, turn)
+   S.history   : entries {t, pid, label, key, changes:[{f,o,n}], before}
+   S.future    : redo stack {e, after}
+   S.timer     : optional game clock
+   ===================================================================== */
+function freshPlayer(i, life, keep) {
+  return {
+    id: i,
+    name: keep ? keep.name : 'PLAYER ' + (i + 1),
+    color: keep ? keep.color : i,
+    partner: keep ? !!keep.partner : false,   // this player runs partner commanders
+    life, rads: 0, poison: 0, energy: 0, exp: 0, tax: 0, note: '',
+    cmd: {},          // commander damage taken: { sourceIndex: [dmgA, dmgB] }
+    manual: false,    // conceded or manually eliminated
+    mask: []          // lethal conditions ignored after a manual revive
+  };
+}
+function freshGame(life, old) {
+  return {
+    players: Array.from({ length: MAX_PLAYERS }, (_, i) => freshPlayer(i, life, old && old.players[i])),
+    monarch: null, initiative: null,
+    turn: { on: false, active: 0, first: 0, n: 1 }
+  };
+}
+function freshState() {
+  return { v: 1, settings: { ...DEF_SETTINGS }, game: freshGame(DEF_SETTINGS.startLife), history: [], future: [], timer: { running: false, start: 0, acc: 0 } };
+}
+let S = loadState() || freshState();
+const P = i => S.game.players[i];
+const NP = () => S.settings.players;
+const pcol = i => PCOLORS[P(i).color].c;
+
+/* =====================================================================
+   3. PERSISTENCE (localStorage, always wrapped so the app works without it)
+   ===================================================================== */
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !s.game || !Array.isArray(s.game.players)) return null;
+    const base = freshState();
+    s.settings = { ...base.settings, ...s.settings };
+    for (let i = 0; i < MAX_PLAYERS; i++) s.game.players[i] = { ...freshPlayer(i, s.settings.startLife), ...(s.game.players[i] || {}) };
+    s.game.turn = { ...base.game.turn, ...(s.game.turn || {}) };
+    s.history = Array.isArray(s.history) ? s.history : [];
+    s.future = Array.isArray(s.future) ? s.future : [];
+    s.timer = { ...base.timer, ...(s.timer || {}) };
+    return s;
+  } catch (e) { return null; }
+}
+let saveTimer = null;
+function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 180); }
+function saveNow() {
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); }
+  catch (e) {
+    try { S.history = S.history.slice(-40); S.future = []; localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e2) { /* storage unavailable: keep running in memory */ }
+  }
+}
+addEventListener('pagehide', saveNow);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+
+/* =====================================================================
+   4. GAME LOGIC (pure state changes, no DOM)
+   ===================================================================== */
+/* All lethal conditions currently true for player i */
+function lethal(G, i) {
+  const p = G.players[i], out = [];
+  if (p.life <= 0) out.push({ c: 'life', k: 'FLATLINED', t: 'LIFE ' + p.life });
+  if (p.poison >= 10) out.push({ c: 'poison', k: 'SIGNAL LOST', t: 'POISON ' + p.poison });
+  for (let s = 0; s < NP(); s++) {
+    if (s === i || !p.cmd[s]) continue;
+    const slots = G.players[s].partner ? 2 : 1;
+    for (let k = 0; k < slots; k++) {
+      if ((p.cmd[s][k] || 0) >= 21) out.push({ c: 'cmd' + s + '.' + k, k: 'SIGNAL LOST', t: '21 CMD DMG: ' + G.players[s].name + (slots > 1 ? (k ? ' B' : ' A') : '') });
+    }
+  }
+  return out;
+}
+/* Elimination status, or null when alive */
+function status(G, i) {
+  const p = G.players[i];
+  if (p.manual) return { k: 'SIGNAL LOST', t: 'CONCEDED' };
+  return lethal(G, i).find(r => !p.mask.includes(r.c)) || null;
+}
+/* Keep derived data consistent after every change */
+function normalize(G) {
+  G.players.forEach((p, i) => {
+    const codes = lethal(G, i).map(r => r.c);
+    p.mask = p.mask.filter(c => codes.includes(c));   // a cleared condition is no longer ignored
+  });
+  const T = G.turn;
+  if (T.active >= NP()) T.active = 0;
+  if (T.first >= NP()) T.first = 0;
+}
+
+let coalesceOK = true;   // false right after undo or redo so a new tap starts a fresh entry
+/*
+  act(): the single entry point for undoable changes.
+  o.pid    player index or null for table wide
+  o.label  history label
+  o.fields [[name, getter(G)]] values recorded before and after
+  o.fn     mutator(G)
+  o.key    coalesce key for rapid repeated taps
+*/
+function act(o) {
+  const before = JSON.stringify(S.game);
+  const olds = o.fields.map(f => f[1](S.game));
+  o.fn(S.game);
+  normalize(S.game);
+  const news = o.fields.map(f => f[1](S.game));
+  const now = Date.now();
+  const last = S.history[S.history.length - 1];
+  if (o.key && coalesceOK && last && last.key === o.key && now - last.t < COALESCE_MS) {
+    last.t = now;
+    last.changes.forEach((c, i) => { c.n = news[i]; });
+  } else {
+    S.history.push({ t: now, pid: o.pid, label: o.label, key: o.key || null,
+      changes: o.fields.map((f, i) => ({ f: f[0], o: olds[i], n: news[i] })), before });
+    if (S.history.length > HISTORY_MAX) S.history.shift();
+  }
+  coalesceOK = true;
+  S.future = [];
+  save(); render();
+}
+function undo() {
+  const e = S.history.pop(); if (!e) return;
+  S.future.push({ e, after: JSON.stringify(S.game) });
+  S.game = JSON.parse(e.before);
+  coalesceOK = false; fx.tap(); save(); render();
+}
+function redo() {
+  const f = S.future.pop(); if (!f) return;
+  f.e.before = JSON.stringify(S.game);
+  S.game = JSON.parse(f.after);
+  S.history.push(f.e);
+  coalesceOK = false; fx.tap(); save(); render();
+}
+
+/* ---- specific actions ---- */
+function changeLife(i, d) {
+  if (!d) return;
+  act({ pid: i, label: 'LIFE', key: 'life' + i, fields: [['LIFE', G => G.players[i].life]], fn: G => { G.players[i].life += d; } });
+  fx.delta(i, d); fx.tap();
+}
+function changeRads(i, d) {
+  const nd = Math.max(-P(i).rads, d); if (!nd) return;
+  act({ pid: i, label: 'RADS', key: 'rads' + i, fields: [['RADS', G => G.players[i].rads]], fn: G => { G.players[i].rads += nd; } });
+  if (nd > 0) fx.geiger(nd); else fx.tap();
+}
+function changeCounter(i, f, label, d) {
+  const nd = Math.max(-P(i)[f], d); if (!nd) return;
+  act({ pid: i, label, key: f + i, fields: [[label, G => G.players[i][f]]], fn: G => { G.players[i][f] += nd; } });
+  fx.tap();
+}
+function cmdVal(G, i, s, k) { const a = G.players[i].cmd[s]; return a ? (a[k] || 0) : 0; }
+function changeCmd(i, s, k, d) {
+  const nd = Math.max(-cmdVal(S.game, i, s, k), d); if (!nd) return;
+  const auto = S.settings.cmdLife;
+  const tag = P(s).partner ? (k ? ' B' : ' A') : '';
+  const fields = [['CMD FROM ' + P(s).name + tag, G => cmdVal(G, i, s, k)]];
+  if (auto) fields.push(['LIFE', G => G.players[i].life]);
+  act({ pid: i, label: 'CMD DMG', key: 'cmd' + i + '.' + s + '.' + k, fields, fn: G => {
+    const q = G.players[i];
+    if (!q.cmd[s]) q.cmd[s] = [0, 0];
+    q.cmd[s][k] = (q.cmd[s][k] || 0) + nd;
+    if (auto) q.life -= nd;
+  } });
+  if (auto) fx.delta(i, -nd);
+  fx.tap();
+}
+/* Rad trigger: mill X, n nonland. Life and rads change together as one history entry. */
+function radTrigger(i, n) {
+  const X = P(i).rads; n = Math.max(0, Math.min(n, X));
+  act({ pid: i, label: 'RAD TRIGGER', fields: [['MILLED', () => X], ['LIFE', G => G.players[i].life], ['RADS', G => G.players[i].rads]],
+    fn: G => { G.players[i].life -= n; G.players[i].rads -= n; } });
+  if (n) fx.delta(i, -n);
+  fx.geiger(Math.max(1, n));
+  clearRadCheck(i);
+}
+function holderName(G, k) { return G[k] == null ? 'NONE' : G.players[G[k]].name; }
+function setMarker(k, i) {
+  act({ pid: i, label: k.toUpperCase(), fields: [[k.toUpperCase(), G => holderName(G, k)]], fn: G => { G[k] = i; } });
+  fx.tap();
+}
+function turnText(G) { return G.turn.on ? 'T' + G.turn.n + ' ' + G.players[G.turn.active].name : 'OFF'; }
+function startTurns(first) {
+  act({ pid: first, label: 'TURNS', fields: [['TURN', turnText]], fn: G => { G.turn = { on: true, active: first, first, n: 1 }; } });
+  fx.alert(); if (P(first).rads > 0) showRadCheck(first);
+}
+function stopTurns() { act({ pid: null, label: 'TURNS', fields: [['TURN', turnText]], fn: G => { G.turn.on = false; } }); }
+function nextTurn() {
+  const G = S.game, T = G.turn, n = NP();
+  if (!T.on) return;
+  let idx = T.active, crossed = false;
+  for (let k = 1; k <= n; k++) {
+    idx = (T.active + k) % n;
+    if (idx === T.first) crossed = true;
+    if (!status(G, idx)) break;
+  }
+  act({ pid: idx, label: 'TURN', fields: [['TURN', turnText]], fn: G2 => { G2.turn.active = idx; if (crossed) G2.turn.n++; } });
+  fx.alert();
+  if (P(idx).rads > 0) showRadCheck(idx);
+}
+function setConcede(i, on) {
+  act({ pid: i, label: on ? 'CONCEDE' : 'REVIVE', fields: [['STATUS', G => status(G, i) ? 'OUT' : 'ALIVE']], fn: G => {
+    const p = G.players[i];
+    if (on) p.manual = true;
+    else { p.manual = false; p.mask = lethal(G, i).map(r => r.c); }   // revive: ignore current lethal conditions
+  } });
+}
+function newGame() {
+  act({ pid: null, label: 'NEW GAME', fields: [['LIFE', G => G.players.slice(0, NP()).map(p => p.life).join(' ')]], fn: G => {
+    const ng = freshGame(S.settings.startLife, G);
+    G.players = ng.players; G.monarch = null; G.initiative = null; G.turn = ng.turn;
+  } });
+  S.timer = { running: false, start: 0, acc: 0 };
+  Object.keys(deltas).forEach(k => { deltas[k].v = 0; showDelta(+k); });
+  save(); render();
+}
+
+/* =====================================================================
+   5. EFFECTS (sound, haptics, floating delta, wake lock)
+   ===================================================================== */
+function vib(p) { if (S.settings.haptic && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { /* unsupported */ } } }
+const fx = {
+  ctx: null, noise: null,
+  ac() {
+    if (!S.settings.sound) return null;
+    try {
+      if (!this.ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; this.ctx = new AC(); }
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return this.ctx;
+    } catch (e) { return null; }
+  },
+  blip(freq, dur, gain, type) {
+    const c = this.ac(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain(), t = c.currentTime;
+    o.type = type || 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+  },
+  tap() { vib(8); this.blip(1900, 0.018, 0.035); },
+  alert() { vib([20, 40, 20]); this.blip(660, 0.09, 0.05, 'triangle'); setTimeout(() => this.blip(990, 0.12, 0.05, 'triangle'), 110); },
+  geiger(n) {
+    vib([6, 30, 6, 30, 6]);
+    const c = this.ac(); if (!c) return;
+    if (!this.noise) {
+      const len = Math.floor(c.sampleRate * 0.004), b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+      for (let j = 0; j < len; j++) d[j] = (Math.random() * 2 - 1) * (1 - j / len);
+      this.noise = b;
+    }
+    const count = Math.min(48, 5 + n * 5), span = Math.min(1.6, 0.25 + n * 0.08);
+    for (let j = 0; j < count; j++) {
+      const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      s.buffer = this.noise; f.type = 'highpass'; f.frequency.value = 1800; g.gain.value = 0.35 + Math.random() * 0.3;
+      s.connect(f); f.connect(g); g.connect(c.destination);
+      s.start(c.currentTime + Math.random() * span);
+    }
+  },
+  flatline() { vib(300); this.blip(520, 0.9, 0.04, 'sine'); },
+  delta(i, d) { bumpDelta(i, d); }
+};
+
+/* floating change readout: sums rapid changes, fades after 2 s idle */
+const deltas = {};
+function bumpDelta(i, d) {
+  const st = deltas[i] || (deltas[i] = { v: 0, t: null });
+  st.v += d; clearTimeout(st.t);
+  st.t = setTimeout(() => { st.v = 0; showDelta(i); }, COALESCE_MS);
+  showDelta(i);
+}
+function showDelta(i) {
+  const r = refs[i]; if (!r) return;
+  const v = deltas[i] ? deltas[i].v : 0;
+  if (v === 0) { r.delta.classList.remove('on'); return; }
+  r.delta.textContent = v > 0 ? '+' + v : '−' + (-v);
+  r.delta.classList.toggle('neg', v < 0); r.delta.classList.toggle('pos', v > 0);
+  r.delta.classList.add('on');
+}
+
+/* Screen Wake Lock: silently does nothing where unsupported */
+let wakeLock = null;
+async function requestWake() {
+  try {
+    if (!('wakeLock' in navigator) || wakeLock || document.visibilityState !== 'visible') return;
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (e) { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') requestWake(); });
+addEventListener('pointerdown', requestWake, { passive: true });
+
+function retrigger(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+
+/* =====================================================================
+   6. LAYOUTS
+   Players are indexed clockwise around the table starting at the bottom
+   seat, so turn order follows the seating. Rotations face each seat:
+   0 bottom, 180 top, 90 left edge, -90 right edge.
+   ===================================================================== */
+const ROT_LAYOUTS = {
+  2: { rows: ['p1', 'p0'], fr: [1, 1], rot: [0, 180] },
+  3: { rows: ['p1 p2', 'p0 p0'], fr: [1.25, 1], rot: [0, 90, -90] },
+  4: { rows: ['p2 p3', 'p1 p0'], fr: [1, 1], rot: [0, 0, 180, 180] },
+  5: { rows: ['p2 p3', 'p1 p4', 'p0 p0'], fr: [1, 1, 0.8], rot: [0, 90, 90, -90, -90] },
+  6: { rows: ['p3 p3', 'p2 p4', 'p1 p5', 'p0 p0'], fr: [0.72, 1, 1, 0.72], rot: [0, 90, 90, 180, -90, -90] },
+  7: { rows: ['p3 p4', 'p2 p5', 'p1 p6', 'p0 p0'], fr: [1, 1, 1, 0.78], rot: [0, 90, 90, 90, -90, -90, -90] },
+  8: { rows: ['p4 p4', 'p3 p5', 'p2 p6', 'p1 p7', 'p0 p0'], fr: [0.62, 1, 1, 1, 0.62], rot: [0, 90, 90, 90, 180, -90, -90, -90] }
+};
+const FLAT_LAYOUTS = {
+  2: ['p0', 'p1'], 3: ['p0', 'p1', 'p2'], 4: ['p0 p1', 'p2 p3'], 5: ['p0 p1', 'p2 p3', 'p4 p4'],
+  6: ['p0 p1', 'p2 p3', 'p4 p5'], 7: ['p0 p1', 'p2 p3', 'p4 p5', 'p6 p6'], 8: ['p0 p1', 'p2 p3', 'p4 p5', 'p6 p7']
+};
+function currentLayout() {
+  const n = NP();
+  if (S.settings.flat) { const rows = FLAT_LAYOUTS[n]; return { rows, fr: rows.map(() => 1), rot: Array(n).fill(0) }; }
+  return ROT_LAYOUTS[n];
+}
+const rotFor = i => (S.settings.flat || !layout) ? 0 : layout.rot[i];
+
+/* =====================================================================
+   7. RENDERING
+   ===================================================================== */
+const $table = document.getElementById('table');
+let refs = [];       // per panel DOM references
+let layout = null;
+let hub = null;
+
+function h(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  if (props) for (const k in props) {
+    const v = props[k];
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'style') e.style.cssText = v;
+    else if (k === 'text') e.textContent = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) { if (c == null || c === false) continue; e.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return e;
+}
+const icon = (id, cls) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('class', 'ico ' + (cls || '')); s.setAttribute('aria-hidden', 'true'); const u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', '#' + id); s.append(u); return s; };
+
+/* Build grid and panels. Called on start and when count or layout mode changes. */
+function buildTable() {
+  layout = currentLayout();
+  $table.innerHTML = '';
+  $table.style.gridTemplateAreas = layout.rows.map(r => '"' + r + '"').join(' ');
+  $table.style.gridTemplateRows = layout.fr.map(f => f + 'fr').join(' ');
+  $table.style.gridTemplateColumns = layout.rows[0].split(' ').length === 2 ? '1fr 1fr' : '1fr';
+  refs = [];
+  for (let i = 0; i < NP(); i++) {
+    const cell = h('div', { class: 'cell', style: 'grid-area:p' + i });
+    const r = buildPanel(i);
+    cell.append(r.root); $table.append(cell);
+    r.cell = cell; refs.push(r);
+  }
+  hub = buildHub(); $table.append(hub.root);
+  sizeCells();
+  refs.forEach((r, i) => { r.prevLife = P(i).life; r.prevDead = !!status(S.game, i); });
+  render();
+}
+
+function buildPanel(i) {
+  const rot = rotFor(i);
+  const r = { rot };
+  const root = h('section', { class: 'panel', 'data-pid': i, style: '--rot:' + rot + 'deg', 'aria-label': 'Player ' + (i + 1) });
+  const zm = h('div', { class: 'zone minus', 'aria-hidden': 'true' }), zp = h('div', { class: 'zone plus', 'aria-hidden': 'true' });
+  bindLifeZone(zm, i, -1); bindLifeZone(zp, i, 1);
+  r.name = h('button', { class: 'pname', onclick: () => openPlayer(i), 'aria-label': 'Open player details' });
+  r.marks = h('span', { class: 'marks' });
+  const menuBtn = h('button', { class: 'pmenu', onclick: () => openPlayer(i), 'aria-label': 'Player menu' }, icon('i-dots'));
+  r.life = h('div', { class: 'life', role: 'status', 'aria-live': 'polite' });
+  r.delta = h('div', { class: 'delta', 'aria-hidden': 'true' });
+  r.rv = h('span', { class: 'rv' });
+  r.radbtn = h('button', { class: 'radbtn', onclick: () => openRad(i), 'aria-label': 'Rad trigger' }, icon('i-tre'), r.rv);
+  const rminus = h('button', { class: 'rbtn', onclick: () => changeRads(i, -1), 'aria-label': 'Remove rad counter' }, '−');
+  const rplus = h('button', { class: 'rbtn', 'aria-label': 'Add rad counter. Hold for more' }, '+');
+  bindLongPress(rplus, () => changeRads(i, 1), () => openRad(i, true));
+  r.meter = h('div', { class: 'meter', 'aria-hidden': 'true' });
+  for (let k = 0; k < METER_SEGS; k++) r.meter.append(h('i'));
+  r.badges = h('div', { class: 'badges' });
+  r.et = h('div', { class: 'etitle' }); r.er = h('div', { class: 'ereason' });
+  r.rc = h('button', { class: 'radcheck', onclick: () => { clearRadCheck(i); openRad(i); } });
+  root.append(
+    h('div', { class: 'frame' }, h('i'), h('i'), h('i'), h('i')),
+    zm, zp,
+    h('div', { class: 'pbody' },
+      h('div', { class: 'phead' }, r.name, r.marks, h('span', { class: 'turnflag' }, 'TURN'), menuBtn),
+      h('div', { class: 'lifebox' },
+        h('span', { class: 'hint l', 'aria-hidden': 'true' }, '−'),
+        h('div', { class: 'lifecol' }, h('div', { class: 'lbl' }, '[ LIFE ]'), r.life),
+        h('span', { class: 'hint r', 'aria-hidden': 'true' }, '+'),
+        r.delta),
+      h('div', { class: 'radwrap' }, h('div', { class: 'radlbl' }, '[ RADS ]'), h('div', { class: 'radrow' }, rminus, r.radbtn, rplus), r.meter),
+      r.badges),
+    h('div', { class: 'elim' }, r.et, r.er),
+    r.rc);
+  r.root = root;
+  return r;
+}
+
+function buildHub() {
+  const u = h('button', { onclick: undo, 'aria-label': 'Undo' }, icon('i-undo'));
+  const m = h('button', { onclick: openMenu, 'aria-label': 'Menu' }, icon('i-menu'));
+  const n = h('button', { class: 'hnext', onclick: nextTurn, 'aria-label': 'Next turn' }, icon('i-next'), h('span'));
+  const t = h('button', { class: 'htime', onclick: toggleTimer, 'aria-label': 'Pause or start timer' });
+  return { root: h('nav', { id: 'hub' }, u, m, n, t), u, m, n, t };
+}
+
+/* Size each panel to its cell, swapping width and height for sideways seats. */
+function sizeCells() {
+  refs.forEach(r => {
+    const w = r.cell.clientWidth, hgt = r.cell.clientHeight, side = Math.abs(r.rot) === 90;
+    r.root.style.width = (side ? hgt : w) + 'px';
+    r.root.style.height = (side ? w : hgt) + 'px';
+  });
+}
+
+function render() {
+  refs.forEach((r, i) => updatePanel(i));
+  updateHub();
+  sheets.forEach(s => { if (s.update) s.update(); });
+}
+
+function updatePanel(i) {
+  const p = P(i), r = refs[i], G = S.game;
+  const col = PCOLORS[p.color].c;
+  r.root.style.setProperty('--pc', col);
+  r.name.textContent = p.name;
+  if (p.life !== r.prevLife) {
+    retrigger(r.life, 'tick');
+    if (r.prevLife !== undefined) retrigger(r.root, p.life < r.prevLife ? 'dmg' : 'heal');
+  }
+  r.prevLife = p.life;
+  r.life.textContent = p.life;
+  // rads
+  const lv = radLevel(p.rads);
+  r.root.dataset.lv = lv;
+  r.root.style.setProperty('--rc', lv ? RAD_COLORS[lv] : col);
+  r.rv.textContent = p.rads;
+  const on = Math.min(p.rads, METER_SEGS);
+  [...r.meter.children].forEach((seg, k) => seg.classList.toggle('on', k < on));
+  r.radbtn.classList.toggle('remind', S.settings.radGlow && p.rads > 0);
+  r.radbtn.setAttribute('aria-label', 'Rad trigger. ' + p.rads + ' rads');
+  // badges
+  r.badges.innerHTML = '';
+  if (p.poison) r.badges.append(h('span', { class: 'bdg' }, 'POI ' + p.poison));
+  if (p.energy) r.badges.append(h('span', { class: 'bdg' }, 'NRG ' + p.energy));
+  if (p.exp) r.badges.append(h('span', { class: 'bdg' }, 'EXP ' + p.exp));
+  if (p.tax) r.badges.append(h('span', { class: 'bdg' }, 'TAX +' + p.tax * 2));
+  let best = 0, bestSrc = -1;
+  for (let s = 0; s < NP(); s++) { if (s === i) continue; for (let k = 0; k < 2; k++) { const v = cmdVal(G, i, s, k); if (v > best) { best = v; bestSrc = s; } } }
+  if (best) r.badges.append(h('span', { class: 'bdg', style: 'color:' + pcol(bestSrc) }, 'CMD ' + best));
+  // markers
+  r.marks.innerHTML = '';
+  if (G.monarch === i) r.marks.append(h('span', { title: 'Monarch' }, icon('i-crown')));
+  if (G.initiative === i) r.marks.append(h('span', { title: 'Initiative' }, icon('i-init')));
+  // turn
+  r.root.classList.toggle('active', G.turn.on && G.turn.active === i);
+  // elimination
+  const st = status(G, i);
+  r.root.classList.toggle('dead', !!st);
+  if (st) { r.et.textContent = st.k; r.er.textContent = st.t; }
+  if (st && !r.prevDead) fx.flatline();
+  r.prevDead = !!st;
+}
+
+function updateHub() {
+  if (!hub) return;
+  hub.u.disabled = !S.history.length;
+  const T = S.game.turn;
+  hub.n.hidden = !T.on;
+  hub.n.lastChild.textContent = 'T' + T.n;
+  hub.t.hidden = !S.settings.timer;
+  hub.t.textContent = fmtTime(timerElapsed()) + (S.timer.running ? '' : ' II');
+}
+
+function showRadCheck(i) {
+  const r = refs[i]; if (!r) return;
+  r.rc.innerHTML = '';
+  r.rc.append('☢ RAD CHECK', h('small', null, 'MILL ' + P(i).rads + '. TAP TO RESOLVE'));
+  retrigger(r.root, 'rc');
+  clearTimeout(r.rcT); r.rcT = setTimeout(() => clearRadCheck(i), 6000);
+}
+function clearRadCheck(i) { const r = refs[i]; if (r) { r.root.classList.remove('rc'); clearTimeout(r.rcT); } }
+
+/* timer */
+function timerElapsed() { return S.timer.acc + (S.timer.running ? Date.now() - S.timer.start : 0); }
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000), hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60, ss = s % 60;
+  const p2 = v => String(v).padStart(2, '0');
+  return (hh ? hh + ':' + p2(mm) : mm) + ':' + p2(ss);
+}
+function toggleTimer() {
+  if (S.timer.running) { S.timer.acc = timerElapsed(); S.timer.running = false; }
+  else { S.timer.start = Date.now(); S.timer.running = true; }
+  fx.tap(); save(); updateHub(); sheets.forEach(s => s.update && s.update());
+}
+function resetTimer() { S.timer = { running: false, start: 0, acc: 0 }; save(); updateHub(); }
+setInterval(() => {
+  if (!S.settings.timer) return;
+  updateHub();
+  document.querySelectorAll('.tmr').forEach(e => { e.textContent = fmtTime(timerElapsed()); });
+}, 1000);
+
+/* =====================================================================
+   8. CONTROLS (tap zones, hold to repeat, long press)
+   ===================================================================== */
+function bindLifeZone(el, i, dir) {
+  let timer = null, t0 = 0, pointer = null;
+  el.addEventListener('pointerdown', e => {
+    if (pointer !== null) return;
+    e.preventDefault();
+    pointer = e.pointerId;
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    el.classList.add('press');
+    changeLife(i, dir);
+    t0 = Date.now();
+    const loop = () => {
+      changeLife(i, dir);
+      const held = Date.now() - t0;
+      timer = setTimeout(loop, held > 2600 ? 45 : held > 1000 ? 85 : 170);   // speeds up after a second
+    };
+    timer = setTimeout(loop, 450);
+  });
+  const end = e => {
+    if (e.pointerId !== pointer) return;
+    clearTimeout(timer); timer = null; pointer = null; el.classList.remove('press');
+  };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => el.addEventListener(t, end));
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+function bindLongPress(el, onTap, onLong) {
+  let t = null, fired = false;
+  el.addEventListener('pointerdown', () => { fired = false; clearTimeout(t); t = setTimeout(() => { fired = true; vib(25); onLong(); }, 520); });
+  const cancel = () => clearTimeout(t);
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(x => el.addEventListener(x, cancel));
+  el.addEventListener('click', e => { if (fired) { e.preventDefault(); fired = false; return; } onTap(); });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+/* Block zoom, pull to refresh and stray scrolling outside sheets */
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('touchmove', e => {
+  if (e.touches.length > 1 || !e.target.closest('.sbody, .quick')) e.preventDefault();
+}, { passive: false });
+addEventListener('resize', () => requestAnimationFrame(sizeCells));
+if (window.ResizeObserver) new ResizeObserver(() => sizeCells()).observe($table);
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sheets.length) sheets[sheets.length - 1].close();
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+});
+
+/* =====================================================================
+   9. DIALOGS (bottom sheets)
+   ===================================================================== */
+const sheets = [];
+function typeText(el, text) {
+  if (RM.matches) { el.textContent = text; return; }
+  el.textContent = ''; el.classList.add('typing');
+  let k = 0;
+  const iv = setInterval(() => {
+    k += 1; el.textContent = text.slice(0, k);
+    if (k >= text.length) { clearInterval(iv); setTimeout(() => el.classList.remove('typing'), 700); }
+  }, 22);
+}
+/*
+  openSheet({title, rot, build(body, api), update(), onClose})
+  rot turns the whole sheet toward the seat that opened it.
+*/
+function openSheet(o) {
+  const rot = o.rot || 0;
+  const layer = h('div', { class: 'layer' });
+  const frame = h('div', { class: 'mframe r' + Math.abs(rot) + (Math.abs(rot) === 90 ? ' side' : ''), style: '--rot:' + rot + 'deg' });
+  const title = h('h2');
+  const body = h('div', { class: 'sbody' });
+  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('div', { class: 'shead' }, title, h('button', { class: 'sclose', onclick: () => api.close(), 'aria-label': 'Close' }, icon('i-x'))),
+    body);
+  frame.append(sheet); layer.append(frame);
+  frame.addEventListener('click', e => { if (e.target === frame) api.close(); });
+  let closed = false;
+  const api = {
+    body,
+    update: o.update || null,
+    refresh() { const st = body.scrollTop; body.innerHTML = ''; o.build(body, api); body.scrollTop = st; },
+    close() {
+      if (closed) return; closed = true;
+      const ix = sheets.indexOf(api); if (ix >= 0) sheets.splice(ix, 1);
+      layer.classList.remove('open');
+      setTimeout(() => layer.remove(), RM.matches ? 0 : 260);
+      if (o.onClose) o.onClose();
+    }
+  };
+  o.build(body, api);
+  document.body.append(layer);
+  sheets.push(api);
+  typeText(title, o.title);
+  requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add('open')));
+  return api;
+}
+function sec(title, ...kids) { return h('div', { class: 'sec' }, h('h3', null, '[ ' + title + ' ]'), ...kids); }
+/* numeric stepper row; binds collects live updaters */
+function stepper(binds, o) {
+  const val = h('span', { class: 'val' });
+  const upd = () => { val.textContent = o.fmt ? o.fmt(o.get()) : o.get(); };
+  binds.push(upd); upd();
+  const mk = (d) => h('button', { class: 'btn', onclick: () => o.change(d), 'aria-label': (d > 0 ? 'Add ' : 'Remove ') + Math.abs(d) + ' ' + o.label }, (d > 0 ? '+' : '−') + (Math.abs(d) === 1 ? '' : Math.abs(d)));
+  const steps = o.steps || [1];
+  return h('div', { class: 'step' },
+    h('span', { class: 'nm', style: o.color ? 'color:' + o.color : null }, o.label),
+    steps.slice().reverse().map(s => mk(-s)), val, steps.map(s => mk(s)));
+}
+function confirmBox(msg, okText, fn) {
+  openSheet({ title: 'CONFIRM', build: (b, api) => {
+    b.append(h('p', { class: 'statusline' }, msg),
+      h('div', { class: 'row end', style: 'margin-top:12px' },
+        h('button', { class: 'btn', onclick: () => api.close() }, 'CANCEL'),
+        h('button', { class: 'btn pri', onclick: () => { api.close(); fn(); } }, okText)));
+  } });
+}
+
+/* ---------- player detail sheet ---------- */
+function openPlayer(i) {
+  const binds = [];
+  openSheet({ title: 'DOSSIER // ' + P(i).name, rot: rotFor(i), update: () => binds.forEach(f => f()), build: (b, api) => {
+    binds.length = 0;
+    const p = P(i);
+    // identity
+    const nameIn = h('input', { class: 'inp', value: p.name, maxlength: 16, autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', 'aria-label': 'Player name' });
+    nameIn.addEventListener('input', () => { P(i).name = (nameIn.value.trim().toUpperCase() || 'PLAYER ' + (i + 1)); save(); render(); });
+    nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') nameIn.blur(); });
+    const sw = h('div', { class: 'row', style: 'margin-top:6px' }, PCOLORS.map((c, ci) =>
+      h('button', { class: 'sw' + (p.color === ci ? ' on' : ''), style: 'background:' + c.c + ';color:' + c.c, 'aria-label': 'Color ' + c.n,
+        onclick: () => { P(i).color = ci; save(); render(); api.refresh(); } })));
+    b.append(sec('IDENT', nameIn, sw));
+    // life and rads
+    b.append(sec('VITALS',
+      stepper(binds, { label: 'LIFE', get: () => P(i).life, change: d => changeLife(i, d), steps: [1, 5] }),
+      stepper(binds, { label: 'RADS', get: () => P(i).rads, change: d => changeRads(i, d), steps: [1, 3] }),
+      h('button', { class: 'btn wide', style: 'margin-top:6px;color:#FFB641;border-color:#FFB641', onclick: () => openRad(i) }, icon('i-tre'), 'RAD TRIGGER')));
+    // commander damage
+    const cmdSec = sec('COMMANDER DAMAGE TAKEN');
+    let any = false;
+    for (let s = 0; s < NP(); s++) {
+      if (s === i) continue; any = true;
+      const src = P(s), sc = pcol(s);
+      const blk = h('div', { class: 'src', style: '--sc:' + sc });
+      const pt = h('button', { class: 'btn chip' + (src.partner ? ' on' : ''), style: 'color:' + sc + ';border-color:' + sc, 'aria-pressed': String(!!src.partner),
+        onclick: () => { P(s).partner = !P(s).partner; normalize(S.game); save(); render(); api.refresh(); } }, 'PARTNER');
+      blk.append(h('div', { class: 'srchead' }, h('span', null, src.name), pt));
+      const slots = src.partner ? 2 : 1;
+      for (let k = 0; k < slots; k++) {
+        blk.append(stepper(binds, { label: slots > 1 ? (k ? 'CMDR B' : 'CMDR A') : 'DAMAGE', color: sc, get: () => cmdVal(S.game, i, s, k), change: d => changeCmd(i, s, k, d), fmt: v => v + '/21' }));
+      }
+      cmdSec.append(blk);
+    }
+    if (!any) cmdSec.append(h('p', { class: 'note' }, 'No opponents.'));
+    cmdSec.append(h('p', { class: 'note' }, S.settings.cmdLife ? 'Commander damage also subtracts life (change in settings).' : 'Commander damage does not change life (change in settings).'));
+    b.append(cmdSec);
+    // counters
+    b.append(sec('COUNTERS',
+      stepper(binds, { label: 'POISON', get: () => P(i).poison, change: d => changeCounter(i, 'poison', 'POISON', d), fmt: v => v + '/10' }),
+      stepper(binds, { label: 'ENERGY', get: () => P(i).energy, change: d => changeCounter(i, 'energy', 'ENERGY', d) }),
+      stepper(binds, { label: 'EXPERIENCE', get: () => P(i).exp, change: d => changeCounter(i, 'exp', 'EXPERIENCE', d) })));
+    b.append(sec('COMMANDER TAX',
+      stepper(binds, { label: 'CASTS', get: () => P(i).tax, change: d => changeCounter(i, 'tax', 'CMD TAX', d), fmt: v => v + ' (+' + v * 2 + ')' })));
+    // note
+    const noteIn = h('input', { class: 'inp', value: p.note, maxlength: 80, autocomplete: 'off', placeholder: 'DECK, REMINDERS', 'aria-label': 'Note' });
+    noteIn.addEventListener('input', () => { P(i).note = noteIn.value; save(); });
+    b.append(sec('NOTE', noteIn));
+    // markers
+    const mon = h('button', { class: 'btn' }, icon('i-crown'), 'MONARCH');
+    const ini = h('button', { class: 'btn' }, icon('i-init'), 'INITIATIVE');
+    mon.onclick = () => setMarker('monarch', S.game.monarch === i ? null : i);
+    ini.onclick = () => setMarker('initiative', S.game.initiative === i ? null : i);
+    binds.push(() => { mon.classList.toggle('on', S.game.monarch === i); ini.classList.toggle('on', S.game.initiative === i); });
+    b.append(sec('MARKERS', h('div', { class: 'grid2' }, mon, ini)));
+    // status
+    const stLine = h('div', { class: 'statusline' });
+    const stBtn = h('button', { class: 'btn wide' });
+    stBtn.onclick = () => { const dead = !!status(S.game, i); if (dead) setConcede(i, false); else confirmBox('Mark ' + P(i).name + ' as conceded?', 'CONCEDE', () => setConcede(i, true)); };
+    binds.push(() => {
+      const st = status(S.game, i);
+      stLine.textContent = st ? 'STATUS: ' + st.k + ' (' + st.t + ')' : 'STATUS: ONLINE';
+      stLine.style.color = st ? 'var(--bad)' : '';
+      stBtn.textContent = st ? 'REVIVE' : 'CONCEDE';
+      stBtn.classList.toggle('danger', !st);
+    });
+    b.append(sec('STATUS', stLine, stBtn, h('p', { class: 'note' }, 'Revive ignores the current lethal condition until it clears. Undo also works.')));
+    binds.forEach(f => f());
+  } });
+}
+
+/* ---------- rad trigger dialog ---------- */
+function openRad(i, focusAdjust) {
+  let n = 0, lastX = -1, millEl, nEl, quick, prev, conf, adj;
+  const upd = () => {
+    const p = P(i), X = p.rads;
+    n = Math.min(n, X);
+    millEl.textContent = X ? 'MILL ' + X + ' CARD' + (X === 1 ? '' : 'S') : 'NO RADS';
+    nEl.textContent = n;
+    if (X !== lastX) {
+      lastX = X; quick.innerHTML = '';
+      for (let k = 0; k <= X; k++) quick.append(h('button', { class: 'btn', 'data-k': k, onclick: () => { n = k; upd(); } }, String(k)));
+    }
+    [...quick.children].forEach(c => c.classList.toggle('on', +c.dataset.k === n));
+    prev.textContent = X ? 'Lose ' + n + ' life. Rads ' + X + ' to ' + (X - n) + '. Life ' + p.life + ' to ' + (p.life - n) + '.' : 'No rads, no trigger.';
+    conf.disabled = !X;
+  };
+  openSheet({ title: 'RAD TRIGGER // ' + P(i).name, rot: rotFor(i), update: () => upd(), build: (b, api) => {
+    millEl = h('div', { class: 'mill', role: 'status' });
+    nEl = h('div', { class: 'nval', 'aria-live': 'polite' });
+    quick = h('div', { class: 'quick' });
+    prev = h('div', { class: 'preview' });
+    conf = h('button', { class: 'btn pri', onclick: () => { if (!P(i).rads) return; radTrigger(i, n); api.close(); } }, 'CONFIRM');
+    const custom = h('input', { class: 'inp', type: 'number', inputmode: 'numeric', min: 1, max: 99, placeholder: 'N', 'aria-label': 'Custom rad amount', style: 'width:84px' });
+    const cv = () => Math.max(0, Math.min(99, parseInt(custom.value, 10) || 0));
+    adj = sec('ADJUST RADS',
+      h('div', { class: 'row' },
+        [-1, 1, 2, 3, 5].map(d => h('button', { class: 'btn', style: 'font-family:var(--font-num)', onclick: () => changeRads(i, d) }, (d > 0 ? '+' : '−') + Math.abs(d)))),
+      h('div', { class: 'row', style: 'margin-top:6px' }, custom,
+        h('button', { class: 'btn', onclick: () => { const v = cv(); if (v) changeRads(i, v); custom.value = ''; } }, 'ADD'),
+        h('button', { class: 'btn', onclick: () => { const v = cv(); if (v) changeRads(i, -v); custom.value = ''; } }, 'REMOVE')));
+    b.append(
+      h('div', { class: 'cap' }, 'FIRST MAIN PHASE'),
+      millEl,
+      h('div', { class: 'cap' }, 'NONLAND CARDS MILLED'),
+      h('div', { class: 'nrow' },
+        h('button', { class: 'btn big', onclick: () => { n = Math.max(0, n - 1); upd(); }, 'aria-label': 'One fewer nonland' }, '−'),
+        nEl,
+        h('button', { class: 'btn big', onclick: () => { n = Math.min(P(i).rads, n + 1); upd(); }, 'aria-label': 'One more nonland' }, '+')),
+      quick, prev,
+      h('div', { class: 'row end' }, h('button', { class: 'btn', onclick: () => api.close() }, 'CANCEL'), conf),
+      h('p', { class: 'note' }, 'Each nonland card milled: lose 1 life and remove 1 rad. Lands do nothing.'),
+      adj);
+    upd();
+  } });
+  if (focusAdjust && adj) setTimeout(() => adj.scrollIntoView({ block: 'start', behavior: RM.matches ? 'auto' : 'smooth' }), 280);
+}
+
+/* ---------- table menu ---------- */
+function chipRow(sel, onPick, withNone) {
+  const row = h('div', { class: 'row' });
+  for (let i = 0; i < NP(); i++) {
+    const c = pcol(i);
+    row.append(h('button', { class: 'btn chip' + (sel === i ? ' on' : ''), style: 'color:' + c + ';border-color:' + c, onclick: () => onPick(i) }, P(i).name));
+  }
+  if (withNone) row.append(h('button', { class: 'btn chip' + (sel == null ? ' on' : ''), onclick: () => onPick(null) }, 'NONE'));
+  return row;
+}
+function openMenu() {
+  openSheet({ title: 'RAD COUNTER // TABLE', update: null, build: (b, api) => {
+    api.update = () => api.refresh();
+    const G = S.game, T = G.turn;
+    b.append(h('div', { class: 'grid2', style: 'margin-top:6px' },
+      h('button', { class: 'btn', disabled: !S.history.length, onclick: undo }, icon('i-undo'), 'UNDO'),
+      h('button', { class: 'btn', disabled: !S.future.length, onclick: redo }, 'REDO')));
+    // turns
+    if (T.on) {
+      b.append(sec('TURN ' + T.n,
+        h('div', { class: 'statusline', style: 'color:' + pcol(T.active) }, 'ACTIVE: ' + P(T.active).name),
+        h('div', { class: 'grid2' },
+          h('button', { class: 'btn pri', onclick: nextTurn }, icon('i-next'), 'NEXT'),
+          h('button', { class: 'btn', onclick: stopTurns }, 'STOP TRACKING'))));
+    } else {
+      b.append(sec('TURN TRACKER',
+        h('p', { class: 'note' }, 'Pick who goes first. Turns pass clockwise in seat order.'),
+        chipRow(null, i => startTurns(i), false),
+        h('button', { class: 'btn wide', style: 'margin-top:6px', onclick: () => { const i = randomAlive(); if (i >= 0) startTurns(i); } }, 'RANDOM FIRST PLAYER')));
+    }
+    b.append(sec('MONARCH', chipRow(G.monarch, i => setMarker('monarch', i), true)));
+    b.append(sec('INITIATIVE', chipRow(G.initiative, i => setMarker('initiative', i), true)));
+    // tools
+    const tools = sec('TOOLS', h('div', { class: 'grid2' },
+      h('button', { class: 'btn', onclick: openDice }, 'DICE + COIN'),
+      h('button', { class: 'btn', onclick: openHistory }, 'HISTORY LOG')));
+    if (S.settings.timer) {
+      tools.append(h('div', { class: 'setrow', style: 'margin-top:6px' },
+        h('span', null, 'TIMER ', h('b', { class: 'tmr', style: 'font-weight:normal;font-family:var(--font-num)' }, fmtTime(timerElapsed()))),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', onclick: toggleTimer }, S.timer.running ? 'PAUSE' : 'START'),
+          h('button', { class: 'btn', onclick: () => { resetTimer(); api.refresh(); } }, 'RESET'))));
+    }
+    b.append(tools);
+    b.append(sec('SYSTEM', h('div', { class: 'grid2' },
+      h('button', { class: 'btn danger', onclick: () => confirmBox('Start a new game? Life, rads and counters reset. Names and colors stay. You can undo this.', 'NEW GAME', newGame) }, 'NEW GAME'),
+      h('button', { class: 'btn', onclick: openSettings }, 'SETTINGS'))));
+  } });
+}
+function randomAlive() {
+  const alive = []; for (let i = 0; i < NP(); i++) if (!status(S.game, i)) alive.push(i);
+  if (!alive.length) return -1;
+  return alive[Math.floor(rand() * alive.length)];
+}
+function rand() {
+  if (window.crypto && crypto.getRandomValues) { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] / 4294967296; }
+  return Math.random();
+}
+
+/* ---------- dice ---------- */
+function openDice() {
+  let res, sub, extra, logEl; const log = [];
+  const roll = (kind) => {
+    let frames = RM.matches ? 0 : 9;
+    const face = () => {
+      if (kind === 'd6') return { t: String(1 + Math.floor(rand() * 6)) };
+      if (kind === 'd20') return { t: String(1 + Math.floor(rand() * 20)) };
+      if (kind === 'coin') return { t: rand() < 0.5 ? 'HEADS' : 'TAILS' };
+      const i = randomAlive(); return i < 0 ? { t: 'NONE' } : { t: P(i).name, c: pcol(i), i };
+    };
+    extra.innerHTML = ''; sub.textContent = kind === 'player' ? 'RANDOM PLAYER' : kind.toUpperCase();
+    const step = () => {
+      const f = face();
+      res.textContent = f.t; res.style.color = f.c || '';
+      if (frames-- > 0) { fx.blip(1200 + rand() * 800, 0.01, 0.03); setTimeout(step, 45); return; }
+      fx.alert();
+      log.unshift(sub.textContent + ': ' + f.t); log.length = Math.min(log.length, 6);
+      logEl.textContent = log.join('  /  ');
+      if (kind === 'player' && f.i != null) extra.append(h('button', { class: 'btn pri', onclick: () => { startTurns(f.i); } }, 'GOES FIRST: START TURNS'));
+    };
+    step();
+  };
+  openSheet({ title: 'RNG // DICE', build: (b) => {
+    res = h('div', { class: 'dres', 'aria-live': 'polite' }, '?');
+    sub = h('div', { class: 'cap' }, 'TAP A ROLL');
+    extra = h('div', { class: 'row center', style: 'min-height:50px;margin:6px 0' });
+    logEl = h('div', { class: 'dlog' });
+    b.append(res, sub, extra, h('div', { class: 'grid4' },
+      h('button', { class: 'btn', onclick: () => roll('d6') }, 'D6'),
+      h('button', { class: 'btn', onclick: () => roll('d20') }, 'D20'),
+      h('button', { class: 'btn', onclick: () => roll('coin') }, 'COIN'),
+      h('button', { class: 'btn', onclick: () => roll('player') }, 'WHO')), logEl);
+  } });
+}
+
+/* ---------- history ---------- */
+function openHistory() {
+  openSheet({ title: 'LOG // HISTORY', build: (b, api) => {
+    api.update = () => api.refresh();
+    b.append(h('div', { class: 'grid2' },
+      h('button', { class: 'btn', disabled: !S.history.length, onclick: undo }, icon('i-undo'), 'UNDO'),
+      h('button', { class: 'btn', disabled: !S.future.length, onclick: redo }, 'REDO')));
+    const list = h('div', { class: 'hist', style: 'margin-top:8px' });
+    if (S.future.length) list.append(h('p', { class: 'note' }, S.future.length + ' undone change' + (S.future.length > 1 ? 's' : '') + ' can be redone.'));
+    const items = S.history.slice(-200).reverse();
+    if (!items.length) list.append(h('p', { class: 'note' }, 'No changes yet.'));
+    items.forEach(e => {
+      const d = new Date(e.t), p2 = v => String(v).padStart(2, '0');
+      const who = e.pid == null ? 'TABLE' : P(e.pid).name;
+      list.append(h('div', { class: 'hrow' },
+        h('span', { class: 'ht' }, p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds())),
+        h('span', { class: 'hw' }, h('b', { style: e.pid == null ? null : 'color:' + pcol(e.pid) }, who), ' ' + e.label),
+        h('span', { class: 'hc' }, e.changes.map(c => c.f + ' ' + c.o + ' → ' + c.n).join(', '))));
+    });
+    b.append(list);
+  } });
+}
+
+/* ---------- settings ---------- */
+function applySettings() {
+  const st = S.settings;
+  document.body.dataset.theme = st.theme;
+  document.body.classList.remove('crt-off', 'crt-low', 'crt-high');
+  document.body.classList.add('crt-' + st.crt);
+  const mt = document.getElementById('metaTheme'); if (mt) mt.setAttribute('content', THEMES[st.theme].meta);
+}
+function openSettings() {
+  const seg = (opts, cur, pick) => h('div', { class: 'seg' }, opts.map(([v, t]) =>
+    h('button', { class: 'btn' + (cur === v ? ' on' : ''), 'aria-pressed': String(cur === v), onclick: () => pick(v) }, t)));
+  openSheet({ title: 'SYSTEM // SETTINGS', build: (b, api) => {
+    const st = S.settings;
+    const set = (k, v, rebuild) => { st[k] = v; applySettings(); if (rebuild) buildTable(); else render(); save(); api.refresh(); };
+    b.append(sec('PLAYERS', seg([2, 3, 4, 5, 6, 7, 8].map(n => [n, String(n)]), st.players, v => set('players', v, true)),
+      h('p', { class: 'note' }, 'Hidden seats keep their names, colors and counters.')));
+    const lifeIn = h('input', { class: 'inp', type: 'number', inputmode: 'numeric', min: 1, max: 999, value: st.startLife, 'aria-label': 'Starting life', style: 'width:100px' });
+    lifeIn.addEventListener('change', () => { const v = parseInt(lifeIn.value, 10); if (v > 0 && v < 1000) { st.startLife = v; save(); api.refresh(); } });
+    b.append(sec('STARTING LIFE', h('div', { class: 'row' }, [20, 25, 30, 40].map(v =>
+      h('button', { class: 'btn' + (st.startLife === v ? ' on' : ''), onclick: () => set('startLife', v) }, String(v))), lifeIn),
+      h('p', { class: 'note' }, 'Applies on the next new game.')));
+    b.append(sec('LAYOUT', seg([[false, 'ROTATED'], [true, 'FLAT']], st.flat, v => set('flat', v, true)),
+      h('p', { class: 'note' }, 'Rotated faces each seat around the table. Flat keeps every panel upright for passing the phone.')));
+    const tog = (label, k) => h('div', { class: 'setrow' }, h('span', null, label), seg([[true, 'ON'], [false, 'OFF']], st[k], v => set(k, v)));
+    b.append(sec('RULES', tog('CMD DMG SUBTRACTS LIFE', 'cmdLife')));
+    b.append(sec('FEEDBACK', tog('RAD REMINDER GLOW', 'radGlow'), tog('SOUND', 'sound'), tog('VIBRATION', 'haptic'), tog('GAME TIMER', 'timer')));
+    b.append(sec('CRT EFFECT', seg([['off', 'OFF'], ['low', 'LOW'], ['high', 'HIGH']], st.crt, v => set('crt', v))));
+    b.append(sec('THEME', h('div', { class: 'grid2' }, Object.keys(THEMES).map(k =>
+      h('button', { class: 'btn' + (st.theme === k ? ' on' : ''), style: 'color:' + THEMES[k].sw + ';border-color:' + THEMES[k].sw, onclick: () => set('theme', k) }, THEMES[k].n)))));
+    b.append(sec('HELP', h('button', { class: 'btn wide', onclick: openHelp }, 'SHOW HELP')));
+  } });
+}
+
+/* ---------- first launch help ---------- */
+function openHelp() {
+  openSheet({ title: 'BOOT // FIELD MANUAL', onClose: () => { S.settings.helpSeen = true; save(); }, build: (b, api) => {
+    b.className += ' help';
+    b.append(
+      h('div', { class: 'demo' }, h('div', null, 'TAP LEFT', h('br'), '− 1 LIFE'), h('div', null, 'TAP RIGHT', h('br'), '+ 1 LIFE')),
+      h('p', null, h('b', null, 'Hold'), ' either side to keep counting. It speeds up after a second. The small number shows the running total of quick changes.'),
+      h('p', null, h('b', null, 'Rads:'), ' use the − and + beside the rad count. Hold + for bigger jumps.'),
+      h('p', null, h('b', null, 'Rad trigger:'), ' tap the trefoil count at your first main phase. Enter how many nonland cards you milled and confirm. Life and rads update together.'),
+      h('p', null, h('b', null, 'Your name or the dots'), ' open your dossier: commander damage, poison, energy, experience, tax, notes and markers.'),
+      h('p', null, h('b', null, 'Center hub:'), ' undo, the table menu (turns, monarch, initiative, dice, history, new game, settings) and next turn.'),
+      h('p', null, 'Every change can be undone. The game saves itself on this device.'),
+      h('button', { class: 'btn pri wide', style: 'margin-top:10px', onclick: () => api.close() }, 'GOT IT'));
+  } });
+}
+
+/* =====================================================================
+   10. PWA: trefoil icon, manifest, offline worker
+   ===================================================================== */
+function trefoilPath() {
+  const r0 = 8.5, r1 = 14.5, r2 = 47, f = v => v.toFixed(2);
+  const pt = (r, a) => f(r * Math.cos(a * Math.PI / 180)) + ' ' + f(r * Math.sin(a * Math.PI / 180));
+  let d = 'M' + r0 + ' 0A' + r0 + ' ' + r0 + ' 0 1 0 ' + (-r0) + ' 0A' + r0 + ' ' + r0 + ' 0 1 0 ' + r0 + ' 0Z';
+  for (const c of [90, 210, 330]) {           // one blade down, two up: the standard trefoil
+    const a1 = c - 30, a2 = c + 30;
+    d += 'M' + pt(r1, a1) + 'L' + pt(r2, a1) + 'A' + r2 + ' ' + r2 + ' 0 0 1 ' + pt(r2, a2) + 'L' + pt(r1, a2) + 'A' + r1 + ' ' + r1 + ' 0 0 0 ' + pt(r1, a1) + 'Z';
+  }
+  return d;
+}
+const TREFOIL = trefoilPath();
+document.getElementById('trePath').setAttribute('d', TREFOIL);
+
+function makeIcon(size) {
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const x = c.getContext('2d');
+    x.fillStyle = '#030a05'; x.fillRect(0, 0, size, size);
+    const g = x.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 1.4);
+    g.addColorStop(0, 'rgba(60,255,110,0.18)'); g.addColorStop(1, 'rgba(60,255,110,0)');
+    x.fillStyle = g; x.fillRect(0, 0, size, size);
+    x.translate(size / 2, size / 2); x.scale(size / 128, size / 128);
+    x.strokeStyle = '#3CFF6E'; x.lineWidth = 3; x.beginPath(); x.arc(0, 0, 54, 0, Math.PI * 2); x.stroke();
+    x.shadowColor = '#3CFF6E'; x.shadowBlur = 8; x.fillStyle = '#3CFF6E';
+    x.fill(new Path2D(TREFOIL), 'evenodd');
+    return c.toDataURL('image/png');
+  } catch (e) { return null; }
+}
+function setupPWA() {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-64 -64 128 128"><rect x="-64" y="-64" width="128" height="128" rx="20" fill="#030a05"/><circle r="54" fill="none" stroke="#3CFF6E" stroke-width="3"/><path fill="#3CFF6E" fill-rule="evenodd" d="' + TREFOIL + '"/></svg>';
+  document.getElementById('favLink').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  const i180 = makeIcon(180), i192 = makeIcon(192), i512 = makeIcon(512);
+  if (i180) document.getElementById('appleIcon').href = i180;
+  const base = location.href.split('#')[0].split('?')[0];
+  const manifest = {
+    name: 'RAD COUNTER', short_name: 'RAD COUNTER', description: 'Commander life and rad counter tracker',
+    start_url: base, scope: base.replace(/[^/]*$/, ''), display: 'standalone', orientation: 'portrait',
+    background_color: '#030a05', theme_color: '#030a05',
+    icons: [i192 && { src: i192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' }, i512 && { src: i512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }].filter(Boolean)
+  };
+  document.getElementById('manifestLink').href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(manifest));
+  /* Offline: browsers only install a service worker from a real file on the same site.
+     If sw.js sits next to index.html it caches the app and fonts. Without it the app still runs. */
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* no worker file: online only relaunch */ });
+  }
+}
+
+/* =====================================================================
+   11. BOOT
+   ===================================================================== */
+applySettings();
+buildTable();
+setupPWA();
+if (!S.settings.helpSeen) openHelp();
+requestWake();
+</script>
+</body>
+</html>
